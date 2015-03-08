@@ -13,31 +13,23 @@
 "
 " 0. Faites ce que vous voulez, j’en ai RIEN À BRANLER.
 
-if exists("g:loaded_fastfold")
+if exists("g:loaded_fastfold") || &cp
   finish
 endif
-
 let g:loaded_fastfold = 1
 
-if !exists('g:fastfold_force')
-  let g:fastfold_force = 0
-endif
+let s:keepcpo         = &cpo
+set cpo&vim
+" ------------------------------------------------------------------------------
 
-if !exists('g:fastfold_map')
-  let g:fastfold_map = 1
+if !exists('g:fastfold_map')         | let g:fastfold_map        = 1 | endif
+if !exists('g:fastfold_savehook')    | let g:fastfold_savehook   = 1 | endif
+if !exists('g:fastfold_togglehook')  | let g:fastfold_togglehook = 0 | endif
+if !exists('g:fastfold_mapsuffixes')
+  let g:fastfold_mapsuffixes = ['x','X','a','A','o','O','c','C','r','R','m','M','i','n','N']
 endif
-
-if !exists('g:fastfold_togglehook')
-  let g:fastfold_togglehook = 0
-endif
-
-if !exists('g:fastfold_savehook')
-  let g:fastfold_savehook = 1
-endif
-
-if !exists("g:fastfold_skipfiles")
-  let g:fastfold_skipfiles = []
-endif
+if !exists('g:fastfold_force')       | let g:fastfold_force     = 0  | endif
+if !exists("g:fastfold_skipfiles")   | let g:fastfold_skipfiles = [] | endif
 
 function! s:locfdm()
   if &l:foldmethod !=# 'manual'
@@ -51,42 +43,26 @@ function! s:locfdm()
   return &g:foldmethod
 endfunction
 
-function! s:lastfdm()
-  if exists('w:lastfdm') && w:lastfdm !=# 'manual'
-    return w:lastfdm
-  endif
-
-  if &l:foldmethod !=# 'manual'
-    return &l:foldmethod
-  endif
-
-  return &g:foldmethod
-endfunction
-
 function! s:Enter()
-  let w:lastfdm = s:locfdm()
-
   if s:Skip()
     return
   endif
 
+  let w:lastfdm = s:locfdm()
   setlocal foldmethod=manual
 endfunction
 
 function! s:Leave()
-  if s:Skip()
-    return
-  endif
-
-  if &l:foldmethod == 'manual'
-    let &l:foldmethod= s:lastfdm()
+  if exists('w:lastfdm') && &l:foldmethod == 'manual'
+    let &l:foldmethod= w:lastfdm
   endif
 endfunction
 
-" See http://vim.wikia.com/wiki/Run_a_command_in_multiple_buffers#Restoring_position
 " Like windo but restore the current buffer.
+" See http://vim.wikia.com/wiki/Run_a_command_in_multiple_buffers#Restoring_position
 function! s:WinDo( command )
-  " work around Vim bug: https://groups.google.com/forum/#!topic/vim_dev/LLTw8JV6wKg
+  " Work around Vim bug.
+  " See https://groups.google.com/forum/#!topic/vim_dev/LLTw8JV6wKg
   let curaltwin = winnr('#') ? winnr('#') : 1
   let currwin=winnr()
   execute 'windo ' . a:command
@@ -94,21 +70,24 @@ function! s:WinDo( command )
   execute currwin . 'wincmd w'
 endfunction
 
-function! s:EnterAllWinOfTab()
-  call s:WinDo("if exists('w:lastfdm') | call s:Enter() | endif")
-endfunction
-
-function! s:LeaveAllWinOfTab()
-  " Because TabEnter triggers BEFORE the FileType (that sets local fdm) and
-  " BufWinEnter (that sets mode line fdm) are executed, check if window fdm
-  " already set up. But TabEnter triggers AFTER WinEnter, so w:Lastfdm check
-  " sufficient. (No b:Lastfdm).
-  call s:WinDo("if exists('w:lastfdm') | call s:Leave() | endif")
-endfunction
-
 function! s:UpdateTab()
-  call s:LeaveAllWinOfTab()
-  call s:EnterAllWinOfTab()
+  " WinEnter then TabEnter then BufEnter then BufWinEnter
+  call s:WinDo("if exists('w:lastfdm') | call s:Enter() | endif")
+  call s:WinDo("call s:Leave()")
+endfunction
+
+function! s:UpdateBuf(feedback)
+  " !exists(w:lastfdm) => no valid buffer.
+  if !exists('w:lastfdm')
+    return
+  endif
+
+  call s:LeaveAllWinOfBuf()
+  call s:EnterAllWinOfBuf()
+
+  if a:feedback
+    echo "updated '".w:lastfdm."' folds"
+  endif
 endfunction
 
 function! s:EnterAllWinOfBuf()
@@ -121,27 +100,25 @@ function! s:LeaveAllWinOfBuf()
   call s:WinDo("if bufnr('%') == s:curbuf | call s:Leave() | endif")
 endfunction
 
-function! s:UpdateBuf(feedback)
-  " !exists(w:lastfdm) => no valid buffer.
-  if !exists('w:lastfdm')
-    return
-  endif
+function! s:isValidBuffer()
+  if exists('b:lastfdm')                           | return 1 | endif
+  if &modifiable == 0                              | return 0 | endif
+  if !(exists('b:isPersistent') && b:isPersistent) | return 0 | endif
+  if exists('b:isTemporary') && b:isTemporary      | return 0 | endif
 
-  call s:LeaveAllWinOfBuf()
-  call s:EnterAllWinOfBuf()
+  return 1
+endfunction
 
+function! s:Skip()
+  if !s:isReasonable() | return 1 | endif
+  if s:inSkipList()    | return 1 | endif
 
-  if !s:Skip() && a:feedback
-    echo "updated '".w:lastfdm."' folds"
-  endif
+  return 0
 endfunction
 
 function! s:isReasonable()
-  if g:fastfold_force
-    return 1
-  endif
-  " if !isValidBuf() then not exists('w:lastfdm')
-  if exists('w:lastfdm') && (w:lastfdm ==# 'syntax' || w:lastfdm ==# 'expr')
+  if g:fastfold_force | return 1 | endif
+  if &l:foldmethod ==# 'syntax' || &l:foldmethod ==# 'expr'
     return 1
   endif
   return 0
@@ -157,39 +134,7 @@ function! s:inSkipList()
   return 0
 endfunction
 
-function! s:Skip()
-  if !s:isReasonable()
-    return 1
-  endif
-  if s:inSkipList()
-    return 1
-  endif
-  return 0
-endfunction
-
-function! s:isValidBuffer()
-  if &modifiable == 0 | return 0 | endif
-
-  " From VIM-STAY:
-  let bufnr = bufnr('%')
-  return bufexists(bufnr)
-  \ && index(['', 'acwrite'], getbufvar(bufnr, '&buftype')) isnot -1
-  \ && getbufvar(bufnr, '&previewwindow') isnot 1
-  \ && getbufvar(bufnr, '&diff') isnot 1
-  \ && getbufvar(bufnr, '&bufhidden') isnot# 'wipe'
-  \ && filereadable(fnamemodify(bufname(bufnr), ':p'))
-
-endfunction
-
-function! s:OverwriteMaps()
-  for mapsuffix in g:fastfold_mapsuffixes
-    " execute 'nnoremap <silent> <SID>z'.mapsuffix.' '.(hasmapto('z'.mapsuffix,'n') ? maparg('z'.mapsuffix, 'n') : 'z'.mapsuffix)
-    " execute 'nnoremap <silent> z'.mapsuffix.' :FastFoldUpdate<CR>:normal <SID>z'.mapsuffix.'<CR>'
-    execute 'nnoremap <silent> z'.mapsuffix.' :FastFoldUpdate<CR>z'.mapsuffix
-  endfor
-endfunction
-
-command! -bang FastFoldUpdate call s:UpdateBuf(<bang>0)
+command! -bar -bang FastFoldUpdate call s:UpdateBuf(<bang>0)
 
 nnoremap <silent> <Plug>(FastFoldUpdate) :FastFoldUpdate!<CR>
 
@@ -198,29 +143,35 @@ if g:fastfold_map == 1 && !hasmapto('<Plug>(FastFoldUpdate)', 'n') && mapcheck('
 endif
 
 if g:fastfold_togglehook == 1
-  if !exists('g:fastfold_mapsuffixes')
-    let g:fastfold_mapsuffixes = ['x','X','a','A','o','O','c','C','r','R','m','M','i','n','N']
-  endif
-  call s:OverwriteMaps()
+  for mapsuffix in g:fastfold_mapsuffixes
+    execute 'nnoremap <silent> z'.mapsuffix.' :FastFoldUpdate<CR>z'.mapsuffix
+  endfor
 endif
 
 augroup FastFold
   autocmd!
-  " for :loadview
-  autocmd SessionLoadPost * call s:Enter()
-  " nonmodifiable buffers do not need fold updates
-  autocmd BufWinEnter ?* if s:isValidBuffer() |  call s:Enter() | endif
-  " for :makeview autocmd in BufWinLeave
+  " Default to last foldmethod of current buffer. This BufWinEnter autocmd
+  " must come before that calling s:Enter().
+  autocmd BufWinEnter ?* if exists('b:lastfdm') | let &l:foldmethod = b:lastfdm | endif
+  autocmd WinLeave    *  if exists('w:lastfdm') | let b:lastfdm     = w:lastfdm | endif
+
+  " isValidBuffer() = nonmodifiable and temp buffers do not need fold updates.
+  autocmd BufWinEnter ?* if s:isValidBuffer() | call s:Enter() | endif
+  " So that a :makeview autocmd loaded AFTER FastFold saves correct foldmethod.
   autocmd BufWinLeave ?* if s:isValidBuffer() | call s:Leave() | endif
-  " Default to last foldmethod of current buffer.
-  autocmd WinLeave * if  exists('w:lastfdm')                        | let b:lastfdm=w:lastfdm | endif
-  autocmd WinEnter * if !exists('w:lastfdm') && exists('b:lastfdm') | let w:lastfdm=b:lastfdm | endif
+  " So that FastFold functions correctly after :loadview.
+  autocmd SessionLoadPost * call s:Enter()
+
   autocmd TabEnter * call s:UpdateTab()
 
+  " Update folds on saving. Split into Pre and Post event so that a :makeeview
+  " BufWrite(Pre) autocmd loaded AFTER FastFold can tap into it.
   if g:fastfold_savehook == 1
-    " update folds on saving
-    autocmd BufWritePost    ?* call s:EnterAllWinOfBuf()
     autocmd BufWritePre     ?* call s:LeaveAllWinOfBuf()
+    autocmd BufWritePost    ?* call s:EnterAllWinOfBuf()
   endif
 augroup end
 
+" ------------------------------------------------------------------------------
+let &cpo= s:keepcpo
+unlet s:keepcpo
