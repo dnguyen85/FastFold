@@ -44,7 +44,13 @@ function! s:locfdm()
 endfunction
 
 function! s:Enter()
+  " skip if another session still loading
+  if exists('g:SessionLoad')
+    return
+  endif
+
   if s:Skip()
+    if exists('w:lastfdm') | unlet w:lastfdm | endif
     return
   endif
 
@@ -77,16 +83,15 @@ function! s:UpdateTab()
 endfunction
 
 function! s:UpdateBuf(feedback)
-  " !exists(w:lastfdm) => no valid buffer.
-  if !exists('w:lastfdm')
-    return
-  endif
-
   call s:LeaveAllWinOfBuf()
   call s:EnterAllWinOfBuf()
 
-  if a:feedback
-    echo "updated '".w:lastfdm."' folds"
+  if !a:feedback | return | endif
+
+  if !exists('w:lastfdm')
+    echomsg "'".&l:foldmethod."'"." folds already continuously updated"
+  else
+    echomsg "updated '".w:lastfdm."' folds"
   endif
 endfunction
 
