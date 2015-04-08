@@ -11,19 +11,21 @@ for a discussion.
 With this plug-in, the folds in the currently edited buffer are updated by an
 automatic fold method only
 
-- when saving the buffer, or
-- when closing or opening folds (off by default), or
+- when saving the buffer
+- when closing or opening folds (zo, za, zc, etc...)
+- when moving or operating fold-wise (zj,zk,[z,]z)
 - when typing `zuz` in normal mode
 
 and are kept as is otherwise (by keeping the fold method set to `manual`).
 
-Each of these triggers for updating folds can be disabled by adding
-
-- `let g:fastfold_savehook = 0`, or
-- `let g:fastfold_togglehook = 0` (default value), or
-- `let g:fastfold_map = 0`
-
-to your `.vimrc` file.
+Each of the above triggers can be changed by in your `.vimrc` by changing
+the following values
+>
+  nmap zuz <Plug>(FastFoldUpdate)
+  let g:fastfold_savehook = 1
+  let g:fastfold_fold_command_suffixes =  ['x','X','a','A','o','O','c','C']
+  let g:fastfold_fold_movement_commands = [']z', '[z', 'zj', 'zk']
+<
 
 FastFold is developed at 
 

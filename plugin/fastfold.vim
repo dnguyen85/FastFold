@@ -22,39 +22,38 @@ let s:keepcpo         = &cpo
 set cpo&vim
 " ------------------------------------------------------------------------------
 
-if !exists('g:fastfold_map')         | let g:fastfold_map        = 1 | endif
 if !exists('g:fastfold_savehook')    | let g:fastfold_savehook   = 1 | endif
-if !exists('g:fastfold_togglehook')  | let g:fastfold_togglehook = 0 | endif
-if !exists('g:fastfold_mapsuffixes')
-  let g:fastfold_mapsuffixes = ['x','X','a','A','o','O','c','C','r','R','m','M','i','n','N']
+if !exists('g:fastfold_fold_command_suffixes')
+  let g:fastfold_fold_command_suffixes = ['x','X','a','A','o','O','c','C']
+endif
+if !exists('g:fastfold_fold_movement_commands')
+  let g:fastfold_fold_movement_commands = [']z', '[z', 'zj', 'zk']
 endif
 if !exists('g:fastfold_force')       | let g:fastfold_force     = 0  | endif
 if !exists("g:fastfold_skipfiles")   | let g:fastfold_skipfiles = [] | endif
 
-function! s:locfdm()
-  if &l:foldmethod !=# 'manual'
-    return &l:foldmethod
-  endif
-
-  if exists('w:lastfdm') && w:lastfdm !=# 'manual'
-    return w:lastfdm
-  endif
-
-  return &g:foldmethod
-endfunction
+" DEPRECATED VARIABLES
+if exists('g:fastfold_mapsuffixes')
+  " echomsg 'FastFold: The variable g:fastfold_mapsuffixes is deprecated. Use g:fastfold_fold_command_suffixes instead'
+  let g:fastfold_fold_command_suffixes = g:fastfold_mapsuffixes
+endif
+if exists('g:fastfold_togglehook') && g:fastfold_togglehook == 0
+  " echomsg 'FastFold: The variable g:fastfold_togglehook is deprecated. Use g:fastfold_fold_command_suffixes=[] instead'
+  let g:fastfold_fold_command_suffixes = []
+endif
 
 function! s:Enter()
   " skip if another session still loading
-  if exists('g:SessionLoad')
-    return
-  endif
+  if exists('g:SessionLoad') | return | endif
+
+  if &l:foldmethod ==# 'manual' | return | endif
 
   if s:Skip()
     if exists('w:lastfdm') | unlet w:lastfdm | endif
     return
   endif
 
-  let w:lastfdm = s:locfdm()
+  let w:lastfdm = &l:foldmethod
   setlocal foldmethod=manual
 endfunction
 
@@ -108,8 +107,6 @@ endfunction
 function! s:isValidBuffer()
   if exists('b:lastfdm')                           | return 1 | endif
   if &modifiable == 0                              | return 0 | endif
-  if !(exists('b:isPersistent') && b:isPersistent) | return 0 | endif
-  if exists('b:isTemporary') && b:isTemporary      | return 0 | endif
 
   return 1
 endfunction
@@ -143,15 +140,19 @@ command! -bar -bang FastFoldUpdate call s:UpdateBuf(<bang>0)
 
 nnoremap <silent> <Plug>(FastFoldUpdate) :FastFoldUpdate!<CR>
 
-if g:fastfold_map == 1 && !hasmapto('<Plug>(FastFoldUpdate)', 'n') && mapcheck('zuz', 'n') ==# ''
+if !hasmapto('<Plug>(FastFoldUpdate)', 'n') && mapcheck('zuz', 'n') ==# ''
   nmap zuz <Plug>(FastFoldUpdate)
 endif
 
-if g:fastfold_togglehook == 1
-  for mapsuffix in g:fastfold_mapsuffixes
-    execute 'nnoremap <silent> z'.mapsuffix.' :FastFoldUpdate<CR>z'.mapsuffix
-  endfor
-endif
+for suffix in g:fastfold_fold_command_suffixes
+  execute 'nnoremap <silent> z'.suffix.' :FastFoldUpdate<CR>z'.suffix
+endfor
+
+for cmd in g:fastfold_fold_movement_commands
+  exe "nnoremap <silent><expr> " . cmd. " ':<c-u>FastFoldUpdate<CR>'.v:count." . "'".cmd."'"
+  exe "xnoremap <silent><expr> " . cmd. " ':<c-u>FastFoldUpdate<CR>gv'.v:count." . "'".cmd."'"
+  exe "onoremap <silent><expr> " . cmd. " '<esc>:<c-u>FastFoldUpdate<CR>'.v:operator.v:count1." . "'".cmd."'"
+endfor
 
 augroup FastFold
   autocmd!
