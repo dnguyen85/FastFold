@@ -19,13 +19,13 @@ automatic fold method only
 and are kept as is otherwise (by keeping the fold method set to `manual`).
 
 Each of the above triggers can be changed by in your `.vimrc` by changing
-the following values
->
+the values
+
   nmap zuz <Plug>(FastFoldUpdate)
   let g:fastfold_savehook = 1
   let g:fastfold_fold_command_suffixes =  ['x','X','a','A','o','O','c','C']
   let g:fastfold_fold_movement_commands = [']z', '[z', 'zj', 'zk']
-<
+
 
 FastFold is developed at 
 
