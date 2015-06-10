@@ -32,20 +32,6 @@ endif
 if !exists('g:fastfold_force')       | let g:fastfold_force     = 0  | endif
 if !exists("g:fastfold_skipfiles")   | let g:fastfold_skipfiles = [] | endif
 
-" DEPRECATED VARIABLES
-if exists('g:fastfold_map') && !g:fastfold_map
-" echomsg 'FastFold: The variable g:fastfold_map is deprecated. Use nmap <SID>(DisableFastFoldUpdate) <Plug>(FastFoldUpdate) instead'
-  nmap <SID>(DisableFastFoldUpdate) <Plug>(FastFoldUpdate)
-endif
-if exists('g:fastfold_mapsuffixes')
-  " echomsg 'FastFold: The variable g:fastfold_mapsuffixes is deprecated. Use g:fastfold_fold_command_suffixes instead'
-  let g:fastfold_fold_command_suffixes = g:fastfold_mapsuffixes
-endif
-if exists('g:fastfold_togglehook') && !g:fastfold_togglehook
-  " echomsg 'FastFold: The variable g:fastfold_togglehook is deprecated. Use g:fastfold_fold_command_suffixes=[] instead'
-  let g:fastfold_fold_command_suffixes = []
-endif
-
 function! s:EnterWin()
   if s:Skip()
     if exists('w:lastfdm') | unlet w:lastfdm | endif
@@ -69,13 +55,22 @@ function! s:WinDo( command )
   " See https://groups.google.com/forum/#!topic/vim_dev/LLTw8JV6wKg
   let curaltwin = winnr('#') ? winnr('#') : 1
   let currwin=winnr()
-  execute 'windo ' . a:command
+  execute 'noautocmd windo ' . a:command
   execute curaltwin . 'wincmd w'
   execute currwin . 'wincmd w'
 endfunction
 
+" WinEnter then TabEnter then BufEnter then BufWinEnter
+function! s:UpdateWin()
+  " skip if another session still loading
+  if exists('g:SessionLoad') | return | endif
+  call s:LeaveWin() | call s:EnterWin()
+endfunction
+
 function! s:UpdateBuf(feedback)
-  call s:UpdateBufWindows()
+  let s:curbuf = bufnr('%')
+  call s:WinDo("if bufnr('%') == s:curbuf | call s:LeaveWin() | endif")
+  call s:WinDo("if bufnr('%') == s:curbuf | call s:EnterWin() | endif")
 
   if !a:feedback | return | endif
 
@@ -84,22 +79,6 @@ function! s:UpdateBuf(feedback)
   else
     echomsg "updated '" . w:lastfdm . "' folds"
   endif
-endfunction
-
-function! s:UpdateWin()
-  " skip if another session still loading
-  if exists('g:SessionLoad') | return | endif
-  call s:LeaveWin() | call s:EnterWin()
-endfunction
-
-" WinEnter then TabEnter then BufEnter then BufWinEnter
-function! s:UpdateBufWindows()
-  " skip if another session still loading
-  if exists('g:SessionLoad') | return | endif
-
-  let s:curbuf = bufnr('%')
-  call s:WinDo("if bufnr('%') == s:curbuf | call s:LeaveWin() | endif")
-  call s:WinDo("if bufnr('%') == s:curbuf | call s:EnterWin() | endif")
 endfunction
 
 function! s:UpdateTab()
@@ -112,8 +91,8 @@ endfunction
 
 function! s:Skip()
   if !s:isReasonable() | return 1 | endif
-  if s:inSkipList()    | return 1 | endif
   if !&l:modifiable    | return 1 | endif
+  if s:inSkipList()    | return 1 | endif
 
   return 0
 endfunction
@@ -132,7 +111,7 @@ endfunction
 function! s:inSkipList()
   let file_name = expand('%:p')
   for ifiles in g:fastfold_skipfiles
-    if file_name =~? ifiles
+    if file_name =~# ifiles
       return 1
     endif
   endfor
@@ -168,15 +147,12 @@ augroup FastFold
   autocmd FileType * call s:UpdateWin()
   " So that FastFold functions correctly after :loadview.
   autocmd SessionLoadPost * call s:LeaveWin() | call s:EnterWin()
-  " So that a :makeview autocmd loaded AFTER FastFold saves correct foldmethod.
-  autocmd BufWinLeave * call s:LeaveWin()
 
   autocmd TabEnter * call s:UpdateTab()
 
-  " Update folds on saving. Split into Pre and Post event so that a :makeeview
-  " BufWrite(Pre) autocmd loaded AFTER FastFold can tap into it?
+  " Update folds on saving.
   if g:fastfold_savehook
-    autocmd BufWrite     ?* call s:UpdateBufWindows()
+    autocmd BufWritePost ?* call s:UpdateBuf(0)
   endif
 augroup end
 
