@@ -39,12 +39,12 @@ function! s:EnterWin()
   endif
 
   let w:lastfdm = &l:foldmethod
-  silent setlocal foldmethod=manual
+  setlocal foldmethod=manual
 endfunction
 
 function! s:LeaveWin()
   if exists('w:lastfdm') && &l:foldmethod ==# 'manual'
-    silent let &l:foldmethod= w:lastfdm
+    let &l:foldmethod= w:lastfdm
   endif
 endfunction
 
@@ -55,16 +55,23 @@ function! s:WinDo( command )
   " See https://groups.google.com/forum/#!topic/vim_dev/LLTw8JV6wKg
   let curaltwin = winnr('#') ? winnr('#') : 1
   let currwin=winnr()
-  execute 'noautocmd windo ' . a:command
-  execute curaltwin . 'wincmd w'
-  execute currwin . 'wincmd w'
+  " avoid errors in CmdWin
+  if exists('*getcmdwintype') && getcmdwintype() != ''
+    return
+  endif
+  silent! execute 'keepjumps noautocmd windo ' . a:command
+  silent! execute curaltwin . 'wincmd w'
+  silent! execute currwin . 'wincmd w'
 endfunction
 
 " WinEnter then TabEnter then BufEnter then BufWinEnter
-function! s:UpdateWin()
+function! s:UpdateWin(check)
   " skip if another session still loading
-  if exists('g:SessionLoad') | return | endif
-  call s:LeaveWin() | call s:EnterWin()
+  if a:check && exists('g:SessionLoad') | return | endif
+
+  let s:curwin = winnr()
+  call s:WinDo("if winnr() == s:curwin | call s:LeaveWin() | endif")
+  call s:WinDo("if winnr() == s:curwin | call s:EnterWin() | endif")
 endfunction
 
 function! s:UpdateBuf(feedback)
@@ -127,26 +134,27 @@ if !hasmapto('<Plug>(FastFoldUpdate)', 'n') && mapcheck('zuz', 'n') ==# ''
 endif
 
 for suffix in g:fastfold_fold_command_suffixes
-  execute 'nnoremap <silent> z'.suffix.' :<c-u>FastFoldUpdate<CR>z'.suffix
+  execute 'nnoremap <silent> z'.suffix.' :<c-u>call <SID>UpdateBuf(0)<CR>z'.suffix
 endfor
 
 for cmd in g:fastfold_fold_movement_commands
-  exe "nnoremap <silent><expr> " . cmd. " ':<c-u>FastFoldUpdate<CR>'.v:count." . "'".cmd."'"
-  exe "xnoremap <silent><expr> " . cmd. " ':<c-u>FastFoldUpdate<CR>gv'.v:count." . "'".cmd."'"
-  exe "onoremap <silent><expr> " . cmd. " '<esc>:<c-u>FastFoldUpdate<CR>'.v:operator.v:count1." . "'".cmd."'"
+  exe "nnoremap <silent><expr> " . cmd. " ':<c-u>call <SID>UpdateWin(0)<CR>'.v:count." . "'".cmd."'"
+  exe "xnoremap <silent><expr> " . cmd. " ':<c-u>call <SID>UpdateWin(0)<CR>gv'.v:count." . "'".cmd."'"
+  exe "onoremap <silent><expr> " . cmd. " '<esc>:<c-u>call <SID>UpdateWin(0)<CR>'.v:operator.v:count1." . "'".cmd."'"
 endfor
 
 augroup FastFold
   autocmd!
   " Default to last foldmethod of current buffer. This BufWinEnter autocmd
   " must come before that calling s:EnterWin().
-  autocmd WinEnter * if exists('b:lastfdm') && !exists('w:lastfdm') | let w:lastfdm= b:lastfdm | call s:UpdateWin() | endif
+  autocmd WinEnter * if exists('b:lastfdm') && !exists('w:lastfdm') | let w:lastfdm= b:lastfdm | call s:UpdateWin(1) | endif
   autocmd WinLeave    *  if exists('w:lastfdm') | let b:lastfdm     = w:lastfdm | endif
 
-  autocmd BufWinEnter * call s:UpdateBuf(0)
-  autocmd FileType * call s:UpdateBuf(0)
+  " skip if another session still loading
+  autocmd BufWinEnter * call s:UpdateWin(1) 
+  autocmd FileType * call s:UpdateWin(1)
   " So that FastFold functions correctly after :loadview.
-  autocmd SessionLoadPost * call s:LeaveWin() | call s:EnterWin()
+  autocmd SessionLoadPost * call s:UpdateWin(0)
 
   autocmd TabEnter * call s:UpdateTab()
 
